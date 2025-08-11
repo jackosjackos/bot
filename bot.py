@@ -98,15 +98,35 @@ JSON_SCHEMA: Dict[str, Any] = {
     "strict": True
 }
 
-def call_openai_for_nutrition(user_text: str) -> Dict[str, Any]:
-    resp = client.responses.create(
+def call_openai_for_nutrition(user_text: str) -> dict:
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
-        instructions=SYSTEM_PROMPT,
-        response_format={"type": "json_schema", "json_schema": JSON_SCHEMA},
-        input=user_text,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_text},
+        ],
+        tools=[{
+            "type": "function",
+            "function": {
+                "name": "nutrition_output",
+                "description": "Return calories/macros or a macro plan as structured JSON.",
+                "parameters": JSON_SCHEMA["schema"],  # reuse your schema object
+            },
+        }],
+        # force the model to use our function (structured output)
+        tool_choice={"type": "function", "function": {"name": "nutrition_output"}},
+        temperature=0.2,
     )
-    raw_text = resp.output_text
-    return json.loads(raw_text)
+
+    msg = resp.choices[0].message
+    if getattr(msg, "tool_calls", None):
+        # arguments is a JSON string—parse it
+        args = msg.tool_calls[0].function.arguments
+        return json.loads(args)
+
+    # Fallback: no tool call (rare). Return something safe.
+    return {"kind": "food_log", "items": [], "totals": {}, "assumptions": msg.content or ""}
+
 
 def build_embed_from_payload(payload: Dict[str, Any], author: discord.Member) -> discord.Embed:
     kind = payload.get("kind")
