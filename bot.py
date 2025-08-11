@@ -98,17 +98,13 @@ JSON_SCHEMA: Dict[str, Any] = {
     "strict": True
 }
 
-async def call_openai_for_nutrition(user_text: str) -> Dict[str, Any]:
-    """Call OpenAI Responses API and return parsed JSON if possible; otherwise raise."""
+def call_openai_for_nutrition(user_text: str) -> Dict[str, Any]:
     resp = client.responses.create(
         model="gpt-4o-mini",
         instructions=SYSTEM_PROMPT,
-        # Using structured outputs via json_schema
         response_format={"type": "json_schema", "json_schema": JSON_SCHEMA},
         input=user_text,
     )
-    # The SDK exposes a convenience: output_text (string). Since we requested JSON,
-    # output_text should be a JSON string. We'll parse it.
     raw_text = resp.output_text
     return json.loads(raw_text)
 
@@ -195,18 +191,13 @@ async def on_message(message: discord.Message):
         await message.reply(embed=embed, mention_author=False)
 
     except json.JSONDecodeError:
-        # If structured output fails, send raw model output
-        try:
-            async with message.channel.typing():
-                resp = client.responses.create(
-                    model="gpt-4o-mini",
-                    instructions=SYSTEM_PROMPT,
-                    input=content,
-                )
-            await message.reply(resp.output_text[:1900], mention_author=False)
-        except Exception as e:
-            logging.exception("OpenAI fallback failed")
-            await message.reply("Sorry — I couldn't process that just now.", mention_author=False)
+    try:
+        async with message.channel.typing():
+            def _fallback_call(txt: str):
+                r = client.responses.create(model="gpt-4o-mini", instructions=SYSTEM_PROMPT, input=txt)
+                return r.output_text
+            raw = await bot.loop.run_in_executor(None, _fallback_call, content)
+        await message.reply(raw[:1900], mention_author=False)
 
     except Exception as e:
         logging.exception("OpenAI call failed")
