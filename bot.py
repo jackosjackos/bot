@@ -191,13 +191,21 @@ async def on_message(message: discord.Message):
         await message.reply(embed=embed, mention_author=False)
 
     except json.JSONDecodeError:
-    try:
-        async with message.channel.typing():
-            def _fallback_call(txt: str):
-                r = client.responses.create(model="gpt-4o-mini", instructions=SYSTEM_PROMPT, input=txt)
-                return r.output_text
-            raw = await bot.loop.run_in_executor(None, _fallback_call, content)
-        await message.reply(raw[:1900], mention_author=False)
+        try:
+            async with message.channel.typing():
+                def _fallback_call(txt: str) -> str:
+                    r = client.responses.create(
+                        model="gpt-4o-mini",
+                        instructions=SYSTEM_PROMPT,
+                        input=txt,
+                    )
+                    return r.output_text
+                raw = await bot.loop.run_in_executor(None, _fallback_call, content)
+            await message.reply(raw[:1900], mention_author=False)
+        except Exception:
+            logging.exception("OpenAI fallback failed")
+            await message.reply("Sorry — I couldn't process that just now.", mention_author=False)
+
 
     except Exception as e:
         logging.exception("OpenAI call failed")
